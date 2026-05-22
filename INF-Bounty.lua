@@ -192,6 +192,16 @@ local function selectFaction(faction)
         if not remotes then return end
         local activity = remotes:FindFirstChild("RE/OnEventServiceActivity")
         local commF    = remotes:FindFirstChild("CommF_")
+        if not activity or not commF then
+            for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+                if v:IsA("RemoteEvent") and v.Name == "RE/OnEventServiceActivity" then
+                    activity = v
+                end
+                if v:IsA("RemoteFunction") and v.Name == "CommF_" then
+                    commF = v
+                end
+            end
+        end
         if activity then activity:FireServer("TeamSelect/Team/"..faction) end
         task.wait(0.05)
         if commF then commF:InvokeServer("SetTeam", faction) end
@@ -434,12 +444,62 @@ AbuseBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Auto start on execute
-_lastKillTime = os.clock()
-_lastForcedHop = os.clock()
-task.spawn(ExecuteAbuse)
+-- Auto start on execute: join Pirates first, then start abuse
+task.spawn(function()
+    local confirmed = false
+    local elapsed = 0
+    local faction = "Pirates"
 
-FixBtn.MouseButton1Click:Connect(function()
+    if lp.Team and lp.Team.Name == faction then
+        confirmed = true
+    end
+
+    while not confirmed do
+        task.wait(0.3)
+        elapsed += 0.3
+        selectFaction(faction)
+        task.wait(0.5)
+        if lp.Team and lp.Team.Name == faction then
+            confirmed = true
+            break
+        end
+        if elapsed >= 30 then
+            confirmed = true -- timeout, proceed anyway
+        end
+    end
+
+    _lastKillTime = os.clock()
+    _lastForcedHop = os.clock()
+    task.spawn(ExecuteAbuse)
+end)
+
+-- Auto re-join Pirates after server hop (ChooseTeam screen detect)
+local function findChooseTeam()
+    for _, gui in ipairs(lp.PlayerGui:GetChildren()) do
+        local ct = gui:FindFirstChild("ChooseTeam", true)
+        if ct then return ct end
+    end
+    return nil
+end
+
+task.spawn(function()
+    local lastVis = false
+    while true do
+        task.wait(0.5)
+        if not getgenv().AbuseActive then continue end
+        local ct = findChooseTeam()
+        local vis = ct and ct.Visible or false
+        if vis and not lastVis then
+            task.wait(0.4)
+            for i = 1, 5 do
+                selectFaction("Pirates")
+                task.wait(1.2)
+                if lp.Team and lp.Team.Name == "Pirates" then break end
+            end
+        end
+        lastVis = vis
+    end
+end)
     pcall(function()
         workspace.CurrentCamera.CameraSubject = lp.Character.Humanoid
         workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
